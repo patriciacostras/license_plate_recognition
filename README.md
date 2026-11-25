@@ -49,5 +49,6 @@ Alege un nume nou pentru fiecare fișier de ieșire. MP4-ul adnotat conține pis
 | OCR cu 231 de decupaje, ponderare și augmentare | 0/34 numere complete, CER 71,6% |
 | Același checkpoint OCR cu 231 de decupaje, cu CTC beam search (10 candidați) | 0/34 numere complete, CER 70,8% |
 | OCR cu 231 de decupaje și intensitatea augmentării 0,5 | 0/34 numere complete, CER 75,4% (75,0% cu beam search) |
+| OCR cu 231 de decupaje, BatchNorm recalibrat pe train | 0/34 numere complete, CER 70,8% (72,0% cu beam search) |
 
 Fluxul video a fost verificat pe un clip de probă generat dintr-o fotografie. Evaluarea pe un clip înregistrat rămâne de făcut.

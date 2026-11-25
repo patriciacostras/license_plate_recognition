@@ -3,6 +3,8 @@ from collections import Counter
 from pathlib import Path
 
 import torch
+from torch import nn
+from torch.utils.data import DataLoader
 
 from config import DATA_DIR
 from models.recognition_cnn import ALPHABET, RecognitionCNN, decode_beam, decode_greedy
@@ -32,11 +34,40 @@ def prefix(text):
 
 
 @torch.inference_mode()
+def recalibrate_batch_norm(model, dataset):
+    """Refresh BatchNorm buffers from clean training inputs."""
+    model.eval()
+    layers = [layer for layer in model.modules() if isinstance(layer, nn.BatchNorm2d)]
+    original_momenta = [layer.momentum for layer in layers]
+    for layer in layers:
+        layer.reset_running_stats()
+        layer.train()
+
+    seen = 0
+    try:
+        for images in DataLoader(dataset, batch_size=32, collate_fn=collate_images):
+            seen += len(images)
+            for layer in layers:
+                layer.momentum = len(images) / seen
+            model.features(images)
+    finally:
+        for layer, momentum in zip(layers, original_momenta):
+            layer.momentum = momentum
+        model.eval()
+
+
+def collate_images(samples):
+    return torch.stack([image for image, _, _ in samples])
+
+
+@torch.inference_mode()
 def main():
     parser = argparse.ArgumentParser(description="Inspectează erorile OCR pe decupajele din val.")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--details", action="store_true", help="Afișează rezultatele fiecărui decupaj")
     parser.add_argument("--beam-width", type=int, help="Păstrează mai multe secvențe candidate în decodarea CTC")
+    parser.add_argument("--recalibrate-bn", action="store_true",
+                        help="Actualizează statisticile BatchNorm din decupajele originale din train")
     args = parser.parse_args()
     if args.beam_width is not None and args.beam_width < 1:
         parser.error("--beam-width trebuie să fie pozitiv")
@@ -48,7 +79,14 @@ def main():
     model = RecognitionCNN()
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    dataset = RecognitionDataset(DATA_DIR / "processed" / "recognition" / "val.csv")
+    manifests = DATA_DIR / "processed" / "recognition"
+    if args.recalibrate_bn:
+        training = RecognitionDataset(manifests / "train.csv")
+        if not training:
+            parser.error("train.csv nu conține decupaje transcrise pentru recalibrare")
+        recalibrate_batch_norm(model, training)
+        print(f"BatchNorm recalibrat pe {len(training)} decupaje de antrenare.")
+    dataset = RecognitionDataset(manifests / "val.csv")
     if not dataset:
         parser.error("val.csv nu conține transcrieri")
 
