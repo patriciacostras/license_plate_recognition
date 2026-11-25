@@ -46,5 +46,7 @@ Alege un nume nou pentru fiecare fișier de ieșire. MP4-ul adnotat conține pis
 | OCR cu ponderare după prefix | 0/34 numere complete, CER 74,6% |
 | OCR cu ponderare și augmentare | 0/34 numere complete, CER 73,3% |
 | Același checkpoint OCR, cu CTC beam search (10 candidați) | 0/34 numere complete, CER 72,5% |
+| OCR cu 231 de decupaje, ponderare și augmentare | 0/34 numere complete, CER 71,6% |
+| Același checkpoint OCR cu 231 de decupaje, cu CTC beam search (10 candidați) | 0/34 numere complete, CER 70,8% |
 
 Fluxul video a fost verificat pe un clip de probă generat dintr-o fotografie. Evaluarea pe un clip înregistrat rămâne de făcut.
