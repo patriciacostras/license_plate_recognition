@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 
 from config import DATA_DIR
-from models.recognition_cnn import ALPHABET, RecognitionCNN, decode_greedy
+from models.recognition_cnn import ALPHABET, RecognitionCNN, decode_beam, decode_greedy
 from preprocessing.recognition_dataset import IMAGE_SIZE, RecognitionDataset
 
 
@@ -36,7 +36,10 @@ def main():
     parser = argparse.ArgumentParser(description="Inspectează erorile OCR pe decupajele din val.")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--details", action="store_true", help="Afișează rezultatele fiecărui decupaj")
+    parser.add_argument("--beam-width", type=int, help="Păstrează mai multe secvențe candidate în decodarea CTC")
     args = parser.parse_args()
+    if args.beam_width is not None and args.beam_width < 1:
+        parser.error("--beam-width trebuie să fie pozitiv")
 
     torch.set_num_threads(min(4, torch.get_num_threads()))
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
@@ -55,7 +58,9 @@ def main():
     operations = Counter()
     for index, (path, _, _) in enumerate(dataset.samples):
         image, target, _ = dataset[index]
-        predicted, = decode_greedy(model(image.unsqueeze(0)))
+        logits = model(image.unsqueeze(0))
+        predictions = decode_greedy(logits) if args.beam_width is None else decode_beam(logits, args.beam_width)
+        predicted, = predictions
         _, substitutions, deletions, insertions = edit_counts(target, predicted)
         operations.update({"înlocuiri": substitutions, "omisiuni": deletions, "adăugiri": insertions})
         exact += predicted == target
