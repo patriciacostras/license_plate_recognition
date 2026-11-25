@@ -48,17 +48,17 @@ def validate(model, dataset, training_texts, device):
           f"CER: {errors / characters:.1%} | excluse pentru suprapunere cu train: {excluded}")
 
 
-def augment_plates(images):
+def augment_plates(images, strength=1.0):
     count, _, height, width = images.shape
     random = torch.rand(count, 5, device=images.device)
     transform = images.new_zeros(count, 2, 3)
-    transform[:, 0, 0] = transform[:, 1, 1] = 1.04 + 0.04 * random[:, 0]
-    transform[:, 0, 2] = (2 * random[:, 1] - 1) * (3 / width)
-    transform[:, 1, 2] = (2 * random[:, 2] - 1) * (1 / height)
+    transform[:, 0, 0] = transform[:, 1, 1] = 1 + strength * (0.04 + 0.04 * random[:, 0])
+    transform[:, 0, 2] = (2 * random[:, 1] - 1) * (3 * strength / width)
+    transform[:, 1, 2] = (2 * random[:, 2] - 1) * (strength / height)
     grid = F.affine_grid(transform, images.shape, align_corners=False)
     shifted = F.grid_sample(images, grid, align_corners=False)
-    contrast = (0.8 + 0.4 * random[:, 3]).view(-1, 1, 1, 1)
-    brightness = (0.16 * random[:, 4] - 0.08).view(-1, 1, 1, 1)
+    contrast = (1 + strength * (0.4 * random[:, 3] - 0.2)).view(-1, 1, 1, 1)
+    brightness = (strength * (0.16 * random[:, 4] - 0.08)).view(-1, 1, 1, 1)
     return ((shifted - 0.5) * contrast + 0.5 + brightness).clamp(0, 1)
 
 
@@ -70,10 +70,16 @@ def main():
                         help="Acordă ponderi totale egale exemplelor cu și fără prefixul TM")
     parser.add_argument("--batch-size", type=int, help="Număr de imagini pe pas")
     parser.add_argument("--augment", action="store_true", help="Aplică variații ușoare decupajelor de train")
+    parser.add_argument("--augment-strength", type=float, default=1.0,
+                        help="Intensitatea augmentării, între 0 și 1")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.steps < 1 or (args.batch_size is not None and args.batch_size < 1):
         parser.error("--steps și --batch-size trebuie să fie pozitive")
+    if not 0 < args.augment_strength <= 1:
+        parser.error("--augment-strength trebuie să fie în intervalul (0, 1]")
+    if args.augment_strength != 1 and not args.augment:
+        parser.error("--augment-strength se folosește împreună cu --augment")
     if args.output.exists() or args.output.resolve().is_relative_to(DATA_DIR.resolve()):
         parser.error("alege un checkpoint nou, în afara folderului data")
 
@@ -90,7 +96,8 @@ def main():
     images, texts, targets = zip(*(dataset[index] for index in range(len(dataset))))
     images = torch.stack(images).to(device)
     batch_size = min(args.batch_size or len(texts), len(texts))
-    print(f"Imagini pe pas: {batch_size}/{len(texts)} | Augmentare: {args.augment}", flush=True)
+    strength = args.augment_strength if args.augment else 0.0
+    print(f"Imagini pe pas: {batch_size}/{len(texts)} | Intensitate augmentare: {strength:g}", flush=True)
     target_lengths = torch.tensor([len(target) for target in targets])
     frame_count = IMAGE_SIZE[0] // 4
     for text in texts:
@@ -125,7 +132,7 @@ def main():
         else:
             batch_images, batch_targets, batch_target_lengths = images, combined_targets, target_lengths
         if args.augment:
-            batch_images = augment_plates(batch_images)
+            batch_images = augment_plates(batch_images, strength)
         log_probabilities = model(batch_images).log_softmax(dim=-1).transpose(0, 1)
         loss = criterion(log_probabilities, batch_targets, input_lengths[:batch_size], batch_target_lengths)
         if args.balance_tm:
@@ -152,6 +159,7 @@ def main():
             "balance_tm": args.balance_tm,
             "batch_size": batch_size,
             "augment": args.augment,
+            "augment_strength": strength,
         }, output)
     print(f"Checkpoint salvat: {args.output}")
 
